@@ -18,6 +18,7 @@ import {WETH} from "solmate/src/tokens/WETH.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {DeployPermit2} from "permit2/test/utils/DeployPermit2.sol";
 import {PositionDescriptor} from "v4-periphery/PositionDescriptor.sol";
+import {Hooks} from "v4-core/libraries/Hooks.sol";
 
 import {Main} from "src/main.sol";
 import { ILOLaunchpad } from "src/abstract/ILOLaunchpad.sol";
@@ -30,13 +31,11 @@ contract MainTest is Test, DeployPermit2 {
 
     IAllowanceTransfer permit2;
     PositionDescriptor public positionDescriptor;
-    //HookSavesDelta hook;
-    //address hookAddr = address(uint160(Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG));
     IWETH9 public _WETH9 = IWETH9(address(new WETH()));
 
     IPoolManager UNI_V4;
     PositionManager posm;
-    
+
     Main main;
 
     address admin = makeAddr("admin");
@@ -50,17 +49,22 @@ contract MainTest is Test, DeployPermit2 {
         //UNI POOL manager
         UNI_V4 =  IPoolManager(address(new PoolManager(address(0))));
 
-        // permit2 = IAllowanceTransfer(deployPermit2());
-        // positionDescriptor = new PositionDescriptor(UNI_V4, 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, "ETH");
-        // posm = new PositionManager(UNI_V4, permit2, 100_000, positionDescriptor, _WETH9);
+        permit2 = IAllowanceTransfer(deployPermit2());
+        positionDescriptor = new PositionDescriptor(UNI_V4, 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, "ETH");
+        posm = new PositionManager(UNI_V4, permit2, 100_000, positionDescriptor, _WETH9);
 
         //deloy contract
         vm.prank(admin);
-        main = new Main(address(UNI_V4), payable(address(UNI_V4)));
 
-        vm.startPrank(launcher);
+        address flags = address(
+            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+        );
+
+        bytes memory constructorArgs = abi.encode(address(UNI_V4), payable(address(posm))); //Add all the necessary constructor arguments from the hook
+        deployCodeTo("main.sol:Main", constructorArgs, flags);
+        main = Main(flags);
+
         launchToken = new ERC20Mock();
-        launchToken.mint(launcher,  1e34);
         usdc = new ERC20Mock();
 
     }
@@ -76,6 +80,9 @@ contract MainTest is Test, DeployPermit2 {
         }
     }
 
+    function orderCurrency(address tokenA, address tokenB) internal returns (address token0, address token1) {
+       (token0, token1) = tokenA < tokenB ? (tokenB, tokenA) : (tokenA, tokenB);
+    }
 
 
     function testTokenLaunch (
@@ -89,9 +96,11 @@ contract MainTest is Test, DeployPermit2 {
 
         address baseCurrency = isNative ? address(usdc) : address(usdc);
 
+        (address token0, address token1) = orderCurrency(baseCurrency, address(launchToken));
+
         PoolKey memory pool = PoolKey(
-            Currency.wrap(address(launchToken)),
-            Currency.wrap(baseCurrency),
+            Currency.wrap(token0),
+            Currency.wrap(token1),
             poolFee,
             tickSpacing,
             IHooks(address(main))
@@ -138,7 +147,6 @@ contract MainTest is Test, DeployPermit2 {
             //assertEq(currentLaunch.launchStatus, ILOLaunchpad.LaunchStatus.PRESALE);
             assertEq(launchToken.balanceOf(address(main)) - balanceBefore, saleTarget + protocolFee);
             assertEq(main.protocolFee(address(launchToken)) - unclaimedFeesBefore, protocolFee); //protocolFee
-            //Todo uncomment once hook is live
             //assertEq(main.poolId(keccak256(abi.encode(pool))), launchIndex);
 
 
@@ -151,13 +159,15 @@ contract MainTest is Test, DeployPermit2 {
 
     function testAddLiquidity (address lp, uint128 saleTarget, uint16 rewardFactorBps, uint24 poolFee, int24 tickSpacing, bool isNative) public returns (uint launchIndex) {
 
-        testTokenLaunch(launcher, saleTarget, rewardFactorBps, poolFee, tickSpacing, isNative);
+        launchIndex = testTokenLaunch(launcher, saleTarget, rewardFactorBps, poolFee, tickSpacing, isNative);
 
         address baseCurrency = isNative ? address(usdc) : address(usdc);
 
+        (address token0, address token1) = orderCurrency(baseCurrency, address(launchToken));
+
         PoolKey memory pool = PoolKey(
-            Currency.wrap(address(launchToken)),
-            Currency.wrap(baseCurrency),
+            Currency.wrap(token0),
+            Currency.wrap(token1),
             poolFee,
             tickSpacing,
             IHooks(address(0))

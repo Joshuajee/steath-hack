@@ -16,8 +16,8 @@ abstract contract ILOAdmin {
 
 
 
-    //Todo only owner
-    function claimFees(address token) external {
+    //Todo only owner and fee collection
+    function claimFees(address token, address to) external {
 
     }
 

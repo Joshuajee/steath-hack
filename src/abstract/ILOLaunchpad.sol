@@ -86,16 +86,15 @@ abstract contract ILOLaunchpad is ILOAdmin {
 
         launchData.push(_launchData);
 
+        (address token0, address token1) = sortCurrency(_launchData.token, _launchData.baseCurrency);
+
         PoolKey memory pool = PoolKey(
-            Currency.wrap(_launchData.token), 
-            Currency.wrap(_launchData.baseCurrency), 
+            Currency.wrap(token0), 
+            Currency.wrap(token1), 
             _launchData.poolFee, 
             _launchData.tickSpacing, 
-            //Todo uncomment later, commented because our contract is not a Hook yet
-            //IHooks(address(this)),
-            IHooks(address(0))
+            IHooks(address(this))
         );
-
 
         UNI_V4.initialize(pool, _launchData.sqrtPriceX96);
 
@@ -108,6 +107,28 @@ abstract contract ILOLaunchpad is ILOAdmin {
 
     function updatePoolStatus(uint launchIndex) public {
         
+        LaunchData storage launch = launchData[launchIndex]; 
+
+        if (launch.launchStatus == LaunchStatus.PRESALE) {
+
+            if (launch.launchedAt + launch.presaleDuration > block.timestamp) {
+                launch.launchStatus = LaunchStatus.FAILED;
+                launch.updatedAt = uint40(block.timestamp);
+            }
+
+            if (launch.saleTarget == launch.totalSales) {
+                launch.launchStatus = LaunchStatus.VESTING;
+                launch.updatedAt = uint40(block.timestamp);
+            }
+
+        } else  if (launch.launchStatus == LaunchStatus.VESTING)  {
+
+            if (launch.updatedAt + launch.vestingDuration > block.timestamp) {
+                launch.launchStatus = LaunchStatus.LIVE;
+                launch.updatedAt = uint40(block.timestamp);
+            }
+
+        }
 
     }
 
@@ -174,8 +195,14 @@ abstract contract ILOLaunchpad is ILOAdmin {
         }
     }
 
+    function sortCurrency(address tokenA, address tokenB) public pure returns (address token0, address token1) {
+       (token0, token1) = tokenA > tokenB ? (tokenB, tokenA) : (tokenA, tokenB);
+    }
 
 
+    function getPoolKeyHash(PoolKey calldata pool) public pure returns (bytes32) {
+        return keccak256(abi.encode(pool));
+    }
 
 
 
