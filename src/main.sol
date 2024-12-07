@@ -52,6 +52,7 @@ contract Main is ILOLaunchpad, BaseHook {
 
     
     function addLiquidity(PoolKey calldata pool, address recipient, uint value) external payable {
+        uint launchIndex = poolId[keccak256(abi.encode(pool))];
         LaunchData memory launch = getLaunchPoolKey(pool);
         bool baseIsNative = launch.baseCurrency == address(0);
         if (baseIsNative) {
@@ -65,22 +66,21 @@ contract Main is ILOLaunchpad, BaseHook {
             investmentToken,
             investmentBase
         );
-        console.log("---", reward, investmentToken, investmentBase);
-        console.log("LQ: ", liquidity);
         IERC20(launch.token).forceApprove(address(V4_POSITION_MANAGER), investmentToken);
         if (!baseIsNative) {
+            IERC20(launch.baseCurrency).safeTransferFrom(msg.sender, address(this), investmentBase);
             IERC20(launch.baseCurrency).forceApprove(address(V4_POSITION_MANAGER), investmentBase);
         }
         bytes[] memory params = new bytes[](2);
-        bytes memory actions = abi.encodePacked(Actions.MINT_POSITION, Actions.SETTLE_PAIR);
-        params[0] = abi.encode(pool, -MAX_TICK, MAX_TICK, liquidity, type(uint128).max, type(uint128).max, recipient, bytes("0"));
+        bytes memory actions = abi.encodePacked(uint8(Actions.MINT_POSITION), uint8(Actions.SETTLE));
+        //Todo implement full range
+        params[0] = abi.encode(pool, -18000, 18000, liquidity, type(uint128).max, type(uint128).max, recipient, bytes("0"));
         params[1] = abi.encode(pool.currency0, pool.currency1);
         uint mintedTokenId = V4_POSITION_MANAGER.nextTokenId();
         V4_POSITION_MANAGER.modifyLiquidities{value: baseIsNative ? investmentBase : 0}(
             abi.encode(actions, params),
             block.timestamp + 60
         );
-        uint launchIndex = poolId[keccak256(abi.encode(pool))];
         vestedToken[mintedTokenId] = Vested({reward: reward, launchIndex: launchIndex });
         //Update Pool status
         updatePoolStatus(launchIndex);

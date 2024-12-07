@@ -80,8 +80,8 @@ contract MainTest is Test, DeployPermit2 {
         }
     }
 
-    function orderCurrency(address tokenA, address tokenB) internal returns (address token0, address token1) {
-       (token0, token1) = tokenA < tokenB ? (tokenB, tokenA) : (tokenA, tokenB);
+    function orderCurrency(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
+       (token0, token1) = tokenA > tokenB ? (tokenB, tokenA) : (tokenA, tokenB);
     }
 
 
@@ -96,7 +96,7 @@ contract MainTest is Test, DeployPermit2 {
 
         address baseCurrency = isNative ? address(usdc) : address(usdc);
 
-        (address token0, address token1) = orderCurrency(baseCurrency, address(launchToken));
+        (address token0, address token1) = main.sortCurrency(baseCurrency, address(launchToken));
 
         PoolKey memory pool = PoolKey(
             Currency.wrap(token0),
@@ -147,7 +147,7 @@ contract MainTest is Test, DeployPermit2 {
             //assertEq(currentLaunch.launchStatus, ILOLaunchpad.LaunchStatus.PRESALE);
             assertEq(launchToken.balanceOf(address(main)) - balanceBefore, saleTarget + protocolFee);
             assertEq(main.protocolFee(address(launchToken)) - unclaimedFeesBefore, protocolFee); //protocolFee
-            //assertEq(main.poolId(keccak256(abi.encode(pool))), launchIndex);
+            assertEq(main.poolId(keccak256(abi.encode(pool))), launchIndex);
 
 
             //Uinswap Asset
@@ -157,29 +157,31 @@ contract MainTest is Test, DeployPermit2 {
 
     }
 
-    function testAddLiquidity (address lp, uint128 saleTarget, uint16 rewardFactorBps, uint24 poolFee, int24 tickSpacing, bool isNative) public returns (uint launchIndex) {
+    function testAddLiquidity (address lp, uint128 saleTarget, uint16 rewardFactorBps) public returns (uint launchIndex) {
 
-        launchIndex = testTokenLaunch(launcher, saleTarget, rewardFactorBps, poolFee, tickSpacing, isNative);
+        int24 tickSpacing = 10;
 
-        address baseCurrency = isNative ? address(usdc) : address(usdc);
+        //vm.assume(tickSpacing % 60 == 0 && tickSpacing < 500);
 
-        (address token0, address token1) = orderCurrency(baseCurrency, address(launchToken));
+        launchIndex = testTokenLaunch(launcher, saleTarget, rewardFactorBps, 10000, tickSpacing, false);
+
+        address baseCurrency = false ? address(usdc) : address(usdc);
+
+        (address token0, address token1) = main.sortCurrency(baseCurrency, address(launchToken));
 
         PoolKey memory pool = PoolKey(
             Currency.wrap(token0),
             Currency.wrap(token1),
-            poolFee,
+            10000,
             tickSpacing,
-            IHooks(address(0))
+            IHooks(address(main))
         );
 
         vm.startPrank(lp);
         mintAndApprove(lp, false);
-        main.addLiquidity(pool, lp, 1 ether);
+        main.addLiquidity(pool, lp, 10 ether);
         vm.stopPrank();
 
-
     }
-
 
 }

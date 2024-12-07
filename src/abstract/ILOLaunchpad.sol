@@ -180,7 +180,15 @@ abstract contract ILOLaunchpad is ILOAdmin {
      */
     function getLaunchInvestmentInfo(LaunchData memory launch, uint value) public pure returns (uint rewards, uint investmentToken, uint investmentBase) {
 
-        uint price = PRECISION / ((launch.sqrtPriceX96 / (2 ** 96)) ** 2);
+        uint price;
+        
+        if (launch.token > launch.baseCurrency) {
+            price = PRECISION / ((launch.sqrtPriceX96 / (2 ** 96)) ** 2);
+        } else {
+            price = PRECISION * ((launch.sqrtPriceX96 / (2 ** 96)) ** 2);
+        }
+
+
         investmentBase = value;
         investmentToken = price * investmentBase / PRECISION;
         rewards = investmentToken * launch.rewardFactorBps / BASE_BPS;
